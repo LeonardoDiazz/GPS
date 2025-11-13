@@ -44,6 +44,11 @@ android {
 }
 
 dependencies {
+    // OpenStreetMap para Compose
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+
+
+    implementation("androidx.compose.material:material-icons-extended")
     // --- Dependencias básicas ---
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
