@@ -12,16 +12,15 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
-        maven("https://osmdroid.rkkv.com/releases")
         maven { url = uri("https://jitpack.io") }
     }
 }
 
 rootProject.name = "GPS"
 include(":app")
- 
