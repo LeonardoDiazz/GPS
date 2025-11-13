@@ -46,6 +46,8 @@ android {
 dependencies {
     // OpenStreetMap para Compose
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.google.maps.android:maps-compose:4.3.3")
+
 
 
     implementation("androidx.compose.material:material-icons-extended")

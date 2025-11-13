@@ -1,4 +1,4 @@
-package mx.edu.utez.gps.data
+package mx.edu.utez.gps.data.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
