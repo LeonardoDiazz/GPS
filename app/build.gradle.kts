@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    // ✅ Solo una vez, con versión
     id("com.google.devtools.ksp") version "2.0.21-1.0.25"
 }
 
@@ -17,7 +16,6 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // ✅ Corregido
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -44,14 +42,13 @@ android {
 }
 
 dependencies {
-    // OpenStreetMap para Compose
+
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     implementation("com.google.maps.android:maps-compose:4.3.3")
 
 
 
     implementation("androidx.compose.material:material-icons-extended")
-    // --- Dependencias básicas ---
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -68,7 +65,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    // --- Librerías adicionales ---
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.1")
     implementation("com.google.android.gms:play-services-location:21.2.0")
@@ -78,9 +74,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.3")
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // --- Room con KSP ---
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    // ✅ Cambiado a ksp
     ksp("androidx.room:room-compiler:2.6.1")
 }
