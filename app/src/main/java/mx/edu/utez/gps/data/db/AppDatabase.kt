@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-@Database(entities = [Trip::class, LocationPoint::class], version = 1, exportSchema = false)
+
+// CAMBIO IMPORTANTE: version = 3 (Debido al nuevo campo 'distance')
+@Database(entities = [Trip::class, LocationPoint::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun tripDao(): TripDao
     companion object {
@@ -16,7 +18,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "trip_database"
-                ).build()
+                )
+                    // Opcional: Si quieres evitar crashes al cambiar versiones en desarrollo
+                    // .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

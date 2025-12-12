@@ -5,19 +5,9 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,26 +16,34 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import mx.edu.utez.gps.viewmodel.TrackingViewModel
 import java.io.File
-import java.util.Objects
+
 @Composable
 fun TrackingScreen(
     viewModel: TrackingViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-// --- Lógica de Cámara ---
-    var tempPhotoUri: Uri? = null // URI temporal para guardar la foto
+
+    // --- ESTADOS ---
+    // 1. Usamos remember para que la URI no se pierda al rotar pantalla o volver de la cámara
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    // 2. Estados para controlar el Diálogo de Título
+    var showTitleDialog by remember { mutableStateOf(false) }
+    var tripTitle by remember { mutableStateOf("") }
+
+    // --- Lógica de Cámara ---
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
         onResult = { success ->
-// Se llama cuando la cámara termina
-            if (success) {
-                tempPhotoUri?.let { uri ->
-                    viewModel.savePhotoAndUpdateTrip(uri)
-                }
+            // Se llama cuando la cámara termina
+            if (success && tempPhotoUri != null) {
+                // CAMBIO: En lugar de guardar directo, mostramos el diálogo
+                showTitleDialog = true
             }
         }
     )
+
     // --- Lógica de Permisos ---
     val permissionsToRequest = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -54,18 +52,19 @@ fun TrackingScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissions ->
-// Aquí puedes manejar si el usuario deniega los permisos
             val allGranted = permissions.values.all { it }
             if (!allGranted) {
-// Mostrar un mensaje al usuario
+                // Opcional: Mostrar mensaje de error
             }
         }
     )
-// Pedir permisos en cuanto la pantalla aparece
+
+    // Pedir permisos al inicio
     LaunchedEffect(key1 = true) {
         permissionLauncher.launch(permissionsToRequest)
     }
-    // --- UI ---
+
+    // --- UI PRINCIPAL ---
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -74,38 +73,98 @@ fun TrackingScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            // Indicador de estado
+            Text(
+                text = if (uiState.isRecording) "GRABANDO RECORRIDO..." else "LISTO PARA INICIAR",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
             Button(
                 onClick = {
                     if (uiState.isRecording) {
-// 1. Si está grabando, paramos
-                        viewModel.onStartStopClick() // Esto llama a stopRecording()
-// 2. Preparamos la URI y lanzamos la cámara
-                        tempPhotoUri = generateTempUri(context)
-                        cameraLauncher.launch(tempPhotoUri)
+                        // 1. Si está grabando, paramos el GPS (pero no cerramos el viaje aún)
+                        viewModel.onStartStopClick()
+
+                        // 2. Generamos URI, guardamos en state y lanzamos cámara
+                        val uri = generateTempUri(context)
+                        tempPhotoUri = uri
+                        cameraLauncher.launch(uri)
                     } else {
-// Si no está grabando, empezamos
-                        viewModel.onStartStopClick() // Esto llama a startRecording()
+                        // Si no está grabando, empezamos
+                        viewModel.onStartStopClick()
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (uiState.isRecording) MaterialTheme.colorScheme.error else
-
-                        MaterialTheme.colorScheme.primary
-
+                    containerColor = if (uiState.isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 ),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth(0.7f)
+                    .height(50.dp)
             ) {
-                Text(if (uiState.isRecording) "Detener y tomar foto" else "Iniciar Grabación")
+                Text(if (uiState.isRecording) "Detener y Foto" else "Iniciar Grabación")
             }
+
             if (uiState.isRecording) {
-                Text("Grabando recorrido #${uiState.currentTripId}...")
+                Spacer(modifier = Modifier.height(16.dp))
+                CircularProgressIndicator()
+                Text(
+                    text = "Viaje ID: ${uiState.currentTripId}",
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
+        }
+
+        // --- CUADRO DE DIÁLOGO (ALERT DIALOG) ---
+        if (showTitleDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    // Opcional: Qué hacer si cancelan (forzar guardado sin título o no hacer nada)
+                },
+                title = { Text(text = "Guardar Recorrido") },
+                text = {
+                    Column {
+                        Text("Asigna un nombre a tu viaje para identificarlo:")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = tripTitle,
+                            onValueChange = { tripTitle = it },
+                            label = { Text("Ej: Ruta al parque") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            // Validar título vacío
+                            val finalTitle = if (tripTitle.isBlank()) "Sin Título" else tripTitle
+
+                            // Llamar al ViewModel con URI y Título
+                            viewModel.finalizeTrip(tempPhotoUri!!, finalTitle)
+
+                            // Limpiar estados
+                            showTitleDialog = false
+                            tripTitle = ""
+                        }
+                    ) {
+                        Text("Guardar")
+                    }
+                },
+                dismissButton = {
+                    // Botón opcional para cancelar (aunque ya se detuvo el GPS)
+                }
+            )
         }
     }
 }
+
 // Función helper para crear una URI donde guardar la foto
 private fun generateTempUri(context: Context): Uri {
     val file = File(context.filesDir, "trip_photo_${System.currentTimeMillis()}.jpg")
+    // Asegúrate de que esto coincida con tu AndroidManifest -> provider authorities
     val authority = "${context.packageName}.provider"
     return FileProvider.getUriForFile(context, authority, file)
 }

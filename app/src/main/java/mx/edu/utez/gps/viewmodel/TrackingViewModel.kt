@@ -3,6 +3,7 @@ package mx.edu.utez.gps.viewmodel
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import mx.edu.utez.gps.data.db.LocationPoint
 import mx.edu.utez.gps.data.location.LocationClient
@@ -22,7 +23,11 @@ data class TrackingUiState(
     val currentTripId: Long? = null
 )
 
-class TrackingViewModel(application: Application) : AndroidViewModel(application) {
+// AGREGAMOS savedStateHandle AL CONSTRUCTOR
+class TrackingViewModel(
+    application: Application,
+    private val savedStateHandle: SavedStateHandle
+) : AndroidViewModel(application) {
 
     private val repository = TripRepository(application)
     private val locationClient = LocationClient(
@@ -35,90 +40,80 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
     private var locationJob: Job? = null
 
+    // --- INIT: VERIFICAR SI VENIMOS DE "CONTINUAR RUTA" ---
+    init {
+        val navTripId = savedStateHandle.get<Long>("tripId") ?: -1L
+        if (navTripId != -1L) {
+            // Si hay un ID válido, iniciamos en modo RESUMEN automáticamente
+            resumeRecording(navTripId)
+        }
+    }
 
-    // -----------------------
-    //  BOTÓN INICIAR / DETENER
-    // -----------------------
     fun onStartStopClick() {
         if (_uiState.value.isRecording) stopRecording()
         else startRecording()
     }
 
-
-    // -----------------------
-    //  INICIAR GRABACIÓN
-    // -----------------------
+    // --- NUEVO VIAJE (Desde cero) ---
     private fun startRecording() {
-
-        // Evita doble clics rápidos
         if (locationJob != null && locationJob?.isActive == true) return
-
         locationJob?.cancel()
 
         viewModelScope.launch {
-
-            // 1. Crear Trip
             val newTripId = repository.startNewTrip()
             if (newTripId <= 0) return@launch
 
-            // 2. Guardar en el estado
-            _uiState.update {
-                it.copy(isRecording = true, currentTripId = newTripId)
-            }
-
-            // 3. Escuchar ubicación
-            locationJob = locationClient.getLocationUpdates(5000L)
-                .catch { e -> e.printStackTrace() }
-                .onEach { location ->
-
-                    val point = LocationPoint(
-                        tripId = newTripId,
-                        latitude = location.latitude,
-                        longitude = location.longitude,
-                        timestamp = System.currentTimeMillis()
-                    )
-
-                    repository.saveLocationPoint(point)
-                }
-                .launchIn(viewModelScope)
+            startLocationUpdates(newTripId)
         }
     }
 
-
-    // -----------------------
-    //  DETENER GRABACIÓN
-    // -----------------------
-    private fun stopRecording() {
-
-        val tripId = _uiState.value.currentTripId
-
+    // --- CONTINUAR VIAJE (Desde Galería) ---
+    private fun resumeRecording(existingTripId: Long) {
+        if (locationJob != null && locationJob?.isActive == true) return
         locationJob?.cancel()
-        locationJob = null
 
-        // Si quieres que TODO viaje tenga endTime aunque no haya foto:
-        if (tripId != null) {
-            viewModelScope.launch {
-                repository.stopTripAndAddPhoto(tripId, "") // sin foto
-            }
+        viewModelScope.launch {
+            // 1. Reabrimos el viaje en BD (endTime = null)
+            repository.resumeTrip(existingTripId)
+
+            // 2. Iniciamos actualizaciones de GPS sobre ese ID existente
+            startLocationUpdates(existingTripId)
+        }
+    }
+
+    // Helper para iniciar el GPS (común para nuevo y continuar)
+    private fun startLocationUpdates(tripId: Long) {
+        _uiState.update {
+            it.copy(isRecording = true, currentTripId = tripId)
         }
 
+        locationJob = locationClient.getLocationUpdates(5000L)
+            .catch { e -> e.printStackTrace() }
+            .onEach { location ->
+                val point = LocationPoint(
+                    tripId = tripId, // Usamos el ID (sea nuevo o viejo)
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    timestamp = System.currentTimeMillis()
+                )
+                repository.saveLocationPoint(point)
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun stopRecording() {
+        locationJob?.cancel()
+        locationJob = null
         _uiState.update {
             it.copy(isRecording = false)
         }
     }
 
-
-    // -----------------------
-    //  GUARDAR FOTO Y CERRAR VIAJE
-    // -----------------------
-    fun savePhotoAndUpdateTrip(photoUri: Uri) {
-
+    fun finalizeTrip(photoUri: Uri, title: String) {
         val tripId = _uiState.value.currentTripId ?: return
-
         viewModelScope.launch {
-            repository.stopTripAndAddPhoto(tripId, photoUri.toString())
-
-            // Reset del estado
+            // Al finalizar, repository calculará la distancia TOTAL (puntos viejos + nuevos)
+            repository.stopTripAndSaveDetails(tripId, photoUri.toString(), title)
             _uiState.update {
                 TrackingUiState(isRecording = false, currentTripId = null)
             }
