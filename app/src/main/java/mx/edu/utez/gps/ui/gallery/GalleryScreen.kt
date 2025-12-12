@@ -1,7 +1,9 @@
 package mx.edu.utez.gps.ui.gallery
 
-import android.net.Uri
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,13 +20,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
 import mx.edu.utez.gps.data.db.Trip
 import mx.edu.utez.gps.viewmodel.GalleryViewModel
 import java.text.SimpleDateFormat
@@ -34,7 +36,7 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun GalleryScreen(
-    navController: NavController, // Necesario para navegar enviando argumentos
+    navController: NavController,
     viewModel: GalleryViewModel = viewModel()
 ) {
     val trips by viewModel.completedTrips.collectAsState()
@@ -44,7 +46,7 @@ fun GalleryScreen(
     ) {
         // Encabezado de la pantalla
         Text(
-            text = "Mis Rutas",
+            text = "Mis Rutas (Nube)",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier
                 .padding(16.dp)
@@ -61,13 +63,9 @@ fun GalleryScreen(
                 TripInteractiveCard(
                     trip = trip,
                     onDelete = {
-                        // Llamamos a la función de borrar del ViewModel
                         viewModel.deleteTrip(it)
                     },
                     onContinue = {
-                        // --- CAMBIO IMPORTANTE AQUÍ ---
-                        // Navegamos a la pantalla de grabación pasando el ID del viaje actual.
-                        // Esto activa la lógica de "Reanudar" en el TrackingViewModel.
                         navController.navigate("tracking?tripId=${trip.id}")
                     }
                 )
@@ -82,23 +80,28 @@ fun TripInteractiveCard(
     onDelete: (Trip) -> Unit,
     onContinue: () -> Unit
 ) {
-    // Estado para controlar si la tarjeta está expandida o cerrada
+    // Estado para controlar si la tarjeta está expandida
     var expanded by remember { mutableStateOf(false) }
 
-    // Cálculo de duración (Fin - Inicio)
+    // --- CAMBIO IMPORTANTE: Decodificar Base64 a Bitmap ---
+    // Usamos remember para hacer la conversión solo una vez cuando cambia la URI
+    val imageBitmap = remember(trip.photoUri) {
+        base64ToBitmap(trip.photoUri)
+    }
+
     val durationMillis = (trip.endTime ?: 0L) - trip.startTime
     val durationStr = formatDuration(durationMillis)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize() // Animación suave al abrir/cerrar
-            .clickable { expanded = !expanded }, // Click para expandir
+            .animateContentSize()
+            .clickable { expanded = !expanded },
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column {
-            // --- 1. ENCABEZADO: Título e ID ---
+            // --- 1. ENCABEZADO ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -113,7 +116,6 @@ fun TripInteractiveCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                // Icono visual
                 Icon(
                     imageVector = if(expanded) Icons.Default.PlayArrow else Icons.Default.CalendarToday,
                     contentDescription = null,
@@ -121,20 +123,31 @@ fun TripInteractiveCard(
                 )
             }
 
-            // --- 2. FOTO ---
-            AsyncImage(
-                model = trip.photoUri?.let { Uri.parse(it) },
-                contentDescription = "Foto del viaje",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp),
-                contentScale = ContentScale.Crop
-            )
+            // --- 2. FOTO (Decodificada desde Base64) ---
+            if (imageBitmap != null) {
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = "Foto del viaje",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                // Fallback si no hay imagen o falló la conversión
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .background(Color.Gray),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Sin Imagen", color = Color.White)
+                }
+            }
 
-            // --- 3. DATOS DEL RECORRIDO ---
+            // --- 3. DATOS ---
             Column(modifier = Modifier.padding(16.dp)) {
-
-                // Fecha
                 InfoRow(
                     icon = Icons.Default.CalendarToday,
                     label = "Fecha:",
@@ -143,7 +156,6 @@ fun TripInteractiveCard(
 
                 Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
 
-                // Distancia (Recorrido)
                 InfoRow(
                     icon = Icons.Default.Straighten,
                     label = "Distancia:",
@@ -152,14 +164,13 @@ fun TripInteractiveCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Tiempo (Duración)
                 InfoRow(
                     icon = Icons.Default.Timer,
                     label = "Duración:",
                     value = durationStr
                 )
 
-                // --- 4. BOTONES (SOLO VISIBLES SI ESTÁ EXPANDIDO) ---
+                // --- 4. BOTONES ---
                 if (expanded) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Divider()
@@ -169,7 +180,6 @@ fun TripInteractiveCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        // Botón ELIMINAR RUTA
                         OutlinedButton(
                             onClick = { onDelete(trip) },
                             colors = ButtonDefaults.outlinedButtonColors(
@@ -181,7 +191,6 @@ fun TripInteractiveCard(
                             Text("Eliminar ruta")
                         }
 
-                        // Botón CONTINUAR RUTA
                         Button(
                             onClick = { onContinue() }
                         ) {
@@ -219,16 +228,36 @@ fun InfoRow(icon: ImageVector, label: String, value: String) {
     }
 }
 
-// --- HELPERS ---
+// --- NUEVA FUNCIÓN: CONVERTIR TEXTO BASE64 A IMAGEN ---
+fun base64ToBitmap(base64Str: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    if (base64Str.isNullOrEmpty()) return null
+    return try {
+        // Si el string viene con el prefijo "data:image/jpeg;base64,", lo limpiamos
+        val pureBase64 = if (base64Str.contains(",")) {
+            base64Str.substringAfter(",")
+        } else {
+            base64Str
+        }
 
-// Formato de fecha
+        // Decodificamos bytes
+        val decodedBytes = Base64.decode(pureBase64, Base64.DEFAULT)
+        // Creamos Bitmap
+        val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+        // Convertimos a ImageBitmap (formato de Compose)
+        bitmap?.asImageBitmap()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+// --- HELPERS DE FORMATO ---
 fun Long.toFormattedDate(): String {
     val date = Date(this)
     val format = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
     return format.format(date)
 }
 
-// Formato de duración
 fun formatDuration(millis: Long): String {
     val minutes = TimeUnit.MILLISECONDS.toMinutes(millis)
     val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
